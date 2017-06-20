@@ -1,0 +1,293 @@
+#subset sum
+
+
+#length of the table must be given in multiples of ultrawords
+#so if 2 or 3 blocks are needed, length would be 32
+#space to reserve = length * number of elements
+
+#small n test
+.data
+wsize:  .word   32
+uwsize: .word   1024
+bwrep:  .word   5       #bits needed to represent w
+buwrep: .word   10
+target: .word   1705
+set:    .word   1020,685,20
+tlen:   .word   2      #64 words: tlen must be in multiples of wsize
+tlenw:  .word   64
+n:      .word   3
+
+table:  .space  256       #tlenw*(n +1)
+arow1:  .space  64
+arow2:  .space  64
+
+.code
+
+li      $r0,0
+uwssq   $u0,0
+li      $r29,stack
+jal     issubsum2
+
+halt
+
+
+#isSubsetSum
+#use this function for target > w^2. if it is smaller, there is no need
+#to use the large nbars function.
+#return:
+#r2 = 1 if ss exists, 0 otherwise
+
+issubsum2:
+#initialize table(0,0) = 1 and first row
+li      $r8,table           #r8 holds the address of the begginning of the table
+li      $r30,1
+uwlrr   $u16,$r30
+li      $r12,wsize
+lw      $r12,$r12,0         #w
+sub     $r17,$r12,$r30       #w-1
+uwsl    $u16,$u16,$r17
+uwsuw   $u16,$r8
+
+#fill table
+li      $r10,0              #row counter c
+li      $r11,n              #n
+lw      $r11,$r11,0
+li      $r9,tlenw          #tlenw
+lw      $r9,$r9,0
+li      $r14,set
+#add     $r13,$r8,$r9          #addr of second row
+add     $r13,$r8,$r0          #addr of row
+
+
+
+loop:
+beq     $r10,$r11,endloop
+addi    $r4,$r13,0          #params for nbars, addr of row
+li      $r5,tlen
+lw      $r5,$r5,0          #tlen
+add     $r6,$r14,$r10
+lw      $r6,$r6,0           #set.at(c-1)
+sw      $r31,$r29,0         #save ra in stack
+sub     $r29,$r29,$r30       #update stack pointer
+jal     nbars
+addi    $r29,$r29,1         #pop! sp pointing at original ra
+lw      $r31,$r29,0
+li      $r24,0
+addi     $r16,$r2,0          #address of shifted row
+add     $r17,$r13,$r9      #row to save in
+innerloop:                  #loop over each UW in row
+beq     $r24,$r5,endinner
+uwluw   $u20,$r13           #aux1 = unshifted ultraword
+uwluw   $u21,$r16           #aux2 = shifted row
+uwor    $u22,$u20,$u21      #aux3 = aux1|aux2
+uwsuw   $u22,$r17
+add     $r17,$r17,$r12
+add     $r16,$r16,$r12
+add     $r13,$r13,$r12
+addi    $r24,$r24,1
+j       innerloop
+endinner:
+#row pointers have been updated in inner loop
+addi    $r10,$r10,1
+j       loop
+
+
+endloop:
+#halt
+sub     $r17,$r17,$r12
+uwluw   $u17,$r17
+
+li      $r4,uwsize
+lw      $r4,$r4,0           #uwsize
+#r5 is already tlen
+#mult (x,y)
+#params:
+#r4 = x
+#r5 = y
+
+sw      $r31,$r29,0         #save ra in stack
+sub     $r29,$r29,$r30       #update stack pointer
+jal     mult
+addi    $r29,$r29,1         #pop! sp pointing at original ra
+lw      $r31,$r29,0
+
+li      $r5,target
+lw      $r5,$r5,0           #target
+
+li      $r3,1
+sub     $r6,$r2,$r5         #(uwsize*tlen) - target
+sub     $r6,$r4,$r6
+#sub     $r6,$r6,$r3
+
+uwsl    $u17,$u17,$r6
+li      $r4,wsize
+lw      $r4,$r4,0
+sub     $r4,$r4,$r3
+uwsr    $u17,$u17,$r4
+
+uwsrr   $r4,$u17
+and     $r2,$r4,$r3
+
+jr      $r31
+
+
+
+
+
+#getbit (uw, bitno)
+#returns #bitno bit of uw
+#params:
+#u4 = ultraword
+#r4 = bitno
+#return:
+#r2 = bit value uw[bitno]
+
+getbit:
+li      $r16,wsize
+lw      $r16,$r16,0
+li      $r18,1
+sub     $r17,$r16,$r18      #w-1
+uwlrr   $u16,$r18
+uwsl    $u16,$u16,$r17
+uwsr    $u16,$u16,$r4       #mask
+uwand   $u17,$u16,$u4
+uwsl    $u17,$u17,$r4
+uwsr    $u17,$u17,$r17
+uwsrr   $r2,$u17
+jr      $r31
+
+
+
+
+#mult (x,y)
+#params:
+#r4 = x
+#r5 = y
+#return:
+#r2 = x*y
+
+mult:
+slt     $r18,$r4,$r5        #r18 = 1 if x<y
+li      $r2,0
+bne     $r18,$r0,ylarger
+li      $r19,0
+xlloop:                     #x > y  (loop on y)
+beq     $r19,$r5,endmult
+add     $r2,$r2,$r4
+addi    $r19,$r19,1
+j       xlloop
+
+ylarger:                    #y > x  (loop on x)
+li      $r19,0              #loopcounter
+ylloop:
+beq     $r19,$r4,endmult
+add     $r2,$r2,$r5
+addi    $r19,$r19,1
+j       ylloop
+
+endmult:
+jr      $r31
+
+
+
+
+#nbars(row address, # of uws in row, x)
+#no boundary right shift: returns row>>x
+#params:
+#r4 = address of row
+#r5 = # of uws in row
+#r6 = number of bits to shift
+#return:
+#r2 = address of shifted row
+
+nbars:
+li      $r16,uwsize
+lw      $r16,$r16,0         #w2
+li      $r18,1
+sub     $r17,$r16,$r18      #w2-1 (mask)
+and     $r25,$r17,$r6       #split
+li      $r23,buwrep
+lw      $r23,$r23,0
+sr      $r24,$r6,$r23       #bts = floor(x/w2) (i)
+uwssq   $u21,0              #aux2 = 0
+li      $r2,arow1
+li      $r27,arow1          #save address
+li      $r23,0              #uw counter for new saved row
+li      $r17,wsize
+lw      $r17,$r17,0         #w
+#first fill out zeros
+fillzeros:
+beq     $r23,$r24,zerosfilled
+uwsuw   $u0,$r27
+addi    $r23,$r23,1
+add     $r27,$r27,$r17      #update save address
+j       fillzeros
+
+zerosfilled:
+addi    $r26,$r4,0          #read address
+sub     $r18,$r16,$r25      #r18 = w2 - split
+
+while:
+beq     $r23,$r5,endwhile   #while there are more ultrawords in row...
+uwluw   $u22,$r26           #tempread
+uwsr    $u20,$u22,$r25      #aux1 = tmpread>>split
+uwor    $u16,$u20,$u21      #aux3 = aux1|aux2
+uwsuw   $u16,$r27
+uwsl    $u21,$u22,$r18      #aux2 = tempread<<(w2-split)
+add     $r26,$r26,$r17
+add     $r27,$r27,$r17
+addi    $r23,$r23,1
+j       while
+
+endwhile:
+jr      $r31
+
+
+
+
+#isSubsetSum , uses target and set defined in data
+#use this function for target < w^2
+#return:
+#r2 = 1 if ss exists, 0 otherwise
+
+issubsum1:
+#initialize table(0,0) = 1
+li      $r8,table       #r8 holds the address of the begginning of the table
+li      $r9,1
+uwlrr   $u16,$r9
+li      $r16,wsize
+lw      $r16,$r16,0     #w
+sub     $r17,$r16,$r9   #w-1
+uwsl    $u16,$u16,$r17
+uwsuw   $u16,$r8
+
+#fill table
+li      $r10,0             #row counter c
+li      $r11,n
+lw      $r11,$r11,0         #n
+li      $r14,set
+addi    $r13,$r8,0       #addr of table.at(c-1)
+loop1:
+beq     $r10,$r11,endloop1
+uwluw   $u17,$r13           #table.at(c-1)
+sub     $r12,$r10,$r0
+add     $r19,$r14,$r12      #addr of set.at(c-1)
+lw      $r19,$r19,0         #set.at(c-1)
+uwsr    $u20,$u17,$r19
+uwor    $u20,$u20,$u17
+add     $r13,$r13,$r16      #next row
+uwsuw   $u20,$r13           #store new line table.at(c)
+addi    $r10,$r10,1
+j       loop1
+endloop1:
+sub     $r13,$r13,$r16
+uwluw   $u4,$r13            #param1 for getbit
+li      $r19,target
+lw      $r19,$r19,0
+addi    $r4,$r19,0          #param2 for getbit
+sw      $r31,$r29,0         #save ra in stack
+sub     $r29,$r29,$r9       #update stack pointer
+jal     getbit
+addi    $r29,$r29,1         #pop! sp pointing at original ra
+lw      $r31,$r29,0
+jr      $r31                #return address

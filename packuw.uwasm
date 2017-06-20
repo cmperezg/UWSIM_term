@@ -1,0 +1,27 @@
+#Program to pack a 128 bit string to a UW.
+
+.data
+string: .ascii   "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+pack:   .word    4
+
+
+.code
+li	$r0,0		#make r0 always hold 0
+li      $r4,0           #shiftcount
+li      $r1,string	#will load the address of the string label
+uwspr   $u1, $r0
+li	$r5,pack
+lw      $r2,$r5,0
+li      $r3,0
+loop:
+beq     $r3,$r2,end
+uwssq   $u2,4
+uwlc    $u2,$r1
+uwsl    $u1,$u1,$r4
+uwor    $u1,$u1,$u2
+addi    $r1,$r1,1
+addi    $r4,$r0,8
+addi    $r3,$r3,1
+j	loop
+end:
+halt

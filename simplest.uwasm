@@ -1,0 +1,24 @@
+#does any of this work?
+.data
+string: .ascii   "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+pack:   .word    4
+
+.code
+li	$r0,0
+uwspr   $u1, $r0
+li      $r5,0 #shift
+li      $r1,string
+uwssq   $u2,4
+uwlc    $u2,$r1
+uwsr    $u2,$u2,$r5
+uwor    $u1,$u1,$u2
+addi    $r1,$r1,1
+addi    $r5,$r5,8
+
+uwssq   $u2,4
+uwlc    $u2,$r1
+uwsl    $u2,$u2,$r5
+uwor    $u1,$u1,$u2
+halt
+
+
